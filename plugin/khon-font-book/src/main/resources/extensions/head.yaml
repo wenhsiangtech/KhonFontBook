@@ -1,0 +1,8 @@
+apiVersion: plugin.halo.run/v1alpha1
+kind: ExtensionDefinition
+metadata:
+  name: khon-font-book-head
+spec:
+  extensionPointName: template-head-processor
+  className: dev.tungwenblog.khonfontbook.FontHeadProcessor
+  displayName: KhonFontBook Head

@@ -1,0 +1,27 @@
+apiVersion: v1alpha1
+kind: Setting
+metadata:
+  name: khon-font-book-settings
+spec:
+  forms:
+    - group: publication
+      label: 主题字体应用
+      formSchema:
+        - $formkit: checkbox
+          name: injectionEnabled
+          label: 启用主题字体注入
+          value: false
+          help: 开启后按实际主题和页面加载已启用规则。修改、停用或关闭后请刷新页面；已打开的页面不会实时撤回样式。默认关闭。页面 HTML 使用 no-store，外部整页缓存也须尊重此设置。
+    - group: resources
+      label: 字体资源
+      formSchema:
+        - $formkit: text
+          name: policyName
+          label: 字体专用本地存储策略标识
+          value: khon-font-book-local
+          validation: required
+          help: 需使用独立子目录、空文件类别列表、1 字节至 20MB 大小限制；不要使用默认策略。插件在上传前校验 WOFF2 / TTF。
+        - $formkit: text
+          name: parserExecutable
+          label: Python 解释器绝对路径
+          help: 留空读取 KHON_FONT_BOOK_PYTHON。需要 Linux、FontTools 4.67.0 和 Brotli 1.2.0；解释器不可用时不能导入。

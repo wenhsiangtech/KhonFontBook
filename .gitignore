@@ -1,0 +1,11 @@
+.gradle/
+node_modules/
+build/
+dist/
+workplace/
+.env
+.env.*
+*.log
+*.tsbuildinfo
+*.ttf
+*.woff2

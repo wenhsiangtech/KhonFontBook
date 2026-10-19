@@ -1,0 +1,7 @@
+KhonFontBook
+Author: KhonChi
+
+The plugin's license is declared in plugin.yaml; see LICENSE for its GPL-3.0 text.
+This distribution includes unmodified third-party software. Its original license
+and notice files are preserved under META-INF/licenses/<artifact>/ in the JAR.
+See THIRD_PARTY_NOTICES.md for the component inventory and external prerequisites.

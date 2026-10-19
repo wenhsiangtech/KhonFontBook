@@ -1,0 +1,18 @@
+apiVersion: plugin.halo.run/v1alpha1
+kind: Plugin
+metadata:
+  name: khon-font-book
+spec:
+  requires: "2.27.0"
+  author:
+    name: KhonChi
+  homepage: https://github.com/wenhsiangtech/KhonFontBook
+  issues: https://github.com/wenhsiangtech/KhonFontBook/issues
+  logo: cover-9dfb46d3.png
+  displayName: "KhonFontBook"
+  description: "静态 WOFF2 / TTF 字体、配对方案、主题规则与 CSS 编译管理"
+  settingName: khon-font-book-settings
+  configMapName: khon-font-book-config
+  license:
+    - name: "GPL-3.0"
+      url: "https://www.gnu.org/licenses/gpl-3.0.html"

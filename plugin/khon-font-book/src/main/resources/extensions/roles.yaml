@@ -1,0 +1,65 @@
+apiVersion: v1alpha1
+kind: Role
+metadata:
+  name: role-template-khon-font-book-view
+  labels:
+    halo.run/role-template: "true"
+  annotations:
+    rbac.authorization.halo.run/module: KhonFontBook
+    rbac.authorization.halo.run/display-name: 查看字体资源
+    rbac.authorization.halo.run/ui-permissions: '["khon-font-book:view"]'
+rules:
+  - apiGroups: [console.api.font-book.tungwenblog.dev]
+    resources: [catalog, references, preview, schemes, schemes/preview, scheme-preview-fonts, rules, rule-options, rule-compilation]
+    verbs: [get, list]
+---
+apiVersion: v1alpha1
+kind: Role
+metadata:
+  name: role-template-khon-font-book-manage
+  labels:
+    halo.run/role-template: "true"
+  annotations:
+    rbac.authorization.halo.run/module: KhonFontBook
+    rbac.authorization.halo.run/display-name: 管理字体资源
+    rbac.authorization.halo.run/dependencies: '["role-template-khon-font-book-view"]'
+    rbac.authorization.halo.run/ui-permissions: '["khon-font-book:manage"]'
+rules:
+  - apiGroups: [console.api.font-book.tungwenblog.dev]
+    resources: [imports, families, faces, assets, faces/recheck, schemes, rules]
+    verbs: [create, update, delete]
+  - apiGroups: [console.api.font-book.tungwenblog.dev]
+    resources: [replacements]
+    verbs: [create]
+---
+apiVersion: v1alpha1
+kind: Role
+metadata:
+  name: role-template-khon-font-book-public-styles
+  labels:
+    halo.run/role-template: "true"
+    halo.run/hidden: "true"
+    rbac.authorization.halo.run/aggregate-to-anonymous: "true"
+    rbac.authorization.halo.run/aggregate-to-authenticated: "true"
+rules:
+  - apiGroups: [api.font-book.tungwenblog.dev]
+    resources: [styles]
+    verbs: [get]
+  - apiGroups: [api.font-book.tungwenblog.dev]
+    resources: [capabilities, families, families/style, schemes, schemes/style]
+    verbs: [get, list]
+---
+apiVersion: v1alpha1
+kind: Role
+metadata:
+  name: role-template-khon-font-book-references
+  labels:
+    halo.run/role-template: "true"
+  annotations:
+    rbac.authorization.halo.run/module: KhonFontBook
+    rbac.authorization.halo.run/display-name: 登记本来源字体引用
+    rbac.authorization.halo.run/ui-permissions: '["khon-font-book:references:manage"]'
+rules:
+  - apiGroups: [console.api.font-book.tungwenblog.dev]
+    resources: [external-references]
+    verbs: [get, list, update, delete]

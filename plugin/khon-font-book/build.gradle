@@ -1,0 +1,123 @@
+plugins {
+    id 'java'
+    id "io.freefair.lombok" version "9.2.0"
+    id "run.halo.plugin.devtools" version "0.8.0"
+}
+
+group 'dev.tungwenblog.khonfontbook'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation platform('run.halo.tools.platform:plugin:2.27.0')
+    compileOnly 'run.halo.app:api'
+    implementation('com.helger:ph-css:8.2.3') {
+        // Halo supplies SLF4J; a private API copy cannot use its Logback provider.
+        exclude group: 'org.slf4j', module: 'slf4j-api'
+    }
+
+    testImplementation 'run.halo.app:api'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = "UTF-8"
+    options.release = 21
+}
+
+tasks.named('generatePluginComponentsIdx') {
+    notCompatibleWithConfigurationCache('This task invokes "Task.project" at execution time, which is not supported with configuration cache.')
+}
+
+halo {
+    version = '2.27.0'
+    port = 8091
+}
+
+haloPlugin {
+    openApi {
+        groupingRules {
+            extensionApis {
+                displayName = 'KhonFontBook APIs'
+                pathsToMatch = ['/apis/font-book.tungwenblog.dev/v1alpha1/**',
+                    '/apis/console.api.font-book.tungwenblog.dev/v1alpha1/**',
+                    '/apis/api.font-book.tungwenblog.dev/v1alpha1/**']
+            }
+        }
+        groupedApiMappings = ['/v3/api-docs/extensionApis': 'extensionApis.json']
+        generator { outputDir = file("${projectDir}/ui/src/api/generated") }
+    }
+}
+
+tasks.register('processUiResources', Sync) {
+    from project(':ui').layout.buildDirectory.dir('dist')
+    into layout.buildDirectory.dir('resources/main/ui')
+    dependsOn project(':ui').tasks.named('assemble')
+    shouldRunAfter tasks.named('processResources')
+}
+
+tasks.named('classes') {
+    dependsOn tasks.named('processUiResources')
+}
+
+configurations {
+    releaseSources { transitive = false }
+}
+
+def releaseRuntimeArtifacts = configurations.runtimeClasspath.resolvedConfiguration.resolvedArtifacts
+releaseRuntimeArtifacts.each { artifact ->
+    dependencies.add('releaseSources', "${artifact.moduleVersion.id.group}:${artifact.name}:${artifact.moduleVersion.id.version}:sources")
+}
+
+tasks.named('processResources') {
+    from('LICENSE')
+    from('NOTICE')
+    from('THIRD_PARTY_NOTICES.md')
+    // Keep dependency legal files distinct when the plugin JAR merges them.
+    releaseRuntimeArtifacts.each { artifact ->
+        from(zipTree(artifact.file)) {
+            include 'LICENSE', 'LICENSE.*', 'NOTICE', 'NOTICE.*',
+                'META-INF/LICENSE*', 'META-INF/NOTICE*'
+            into "META-INF/licenses/${artifact.moduleVersion.id.group}.${artifact.name}-${artifact.moduleVersion.id.version}"
+        }
+    }
+}
+
+tasks.register('sourceBundle', Zip) {
+    group = 'distribution'
+    description = 'Package corresponding source and public documents without local data or caches'
+    mustRunAfter project(':ui').tasks.named('pnpmInstall')
+    archiveFileName = "${rootProject.name}-${project.version}-sources.zip"
+    destinationDirectory = layout.buildDirectory.dir('distributions')
+    from(configurations.releaseSources) { into 'third-party-sources' }
+    from(projectDir) {
+        into 'plugin/khon-font-book'
+        include 'src/**', 'ui/src/**', 'ui/env.d.ts', 'ui/*.json', 'ui/*.ts',
+            'ui/*.yaml', 'ui/*.gradle', 'ui/*.cjs', 'ui/*.js',
+            'gradle/wrapper/**', 'gradlew', 'gradlew.bat', '*.gradle',
+            'gradle.properties', '.gitignore', 'LICENSE', 'NOTICE',
+            'THIRD_PARTY_NOTICES.md', 'README.md'
+        exclude 'src/main/resources/ui/**'
+    }
+    from(rootProject.file('../../docs/plugin/khon-font-book')) {
+        into 'docs/plugin/khon-font-book'
+        include 'app-store-listing.md', 'privacy.md', 'release-notes.md', 'build.md'
+    }
+    from(rootProject.file('../../scripts/halo-fonts')) {
+        into 'scripts/halo-fonts'
+        include 'Dockerfile', 'requirements.txt'
+    }
+}
