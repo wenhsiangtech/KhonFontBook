@@ -20,7 +20,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.multipart.FilePart;
 import org.springframework.stereotype.Service;
-import org.springframework.util.unit.DataSize;
 import reactor.core.publisher.Flux;
 import run.halo.app.core.extension.attachment.Attachment;
 import run.halo.app.core.extension.Theme;
@@ -48,11 +47,19 @@ public class FontService {
     private final SettingFetcher settings;
     private final Environment environment;
     private final ExternalUrlSupplier externalUrl;
+    private final FontStorage storage;
     private static final JsonMapper JSON = JsonMapper.builder().disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES).build();
     private final WebClient http = WebClient.builder().codecs(c -> c.defaultCodecs().maxInMemorySize(FontParser.MAX_BYTES)).build();
+    private final java.util.concurrent.atomic.AtomicBoolean parsingRequest = new java.util.concurrent.atomic.AtomicBoolean();
+
+    private <T> T parsingRequest(java.util.function.Supplier<T> action) {
+        if (!parsingRequest.compareAndSet(false, true))
+            throw problem(HttpStatus.SERVICE_UNAVAILABLE, "PARSER_BUSY", "解析器忙，请稍后重试");
+        try { return action.get(); }
+        finally { parsingRequest.set(false); }
+    }
 
     public record Options(String policyName, String parserExecutable) { }
-    private record LocalPolicy(String location, String maxFileSize, List<String> allowedFileTypes) { }
     public record AttachmentChoice(String name, String displayName, long size) { }
     public record FaceView(FontFace face, String availability, String message) { }
     public record Catalog(List<FontFamily> families, List<FontAsset> assets, List<FaceView> faces,
@@ -597,9 +604,7 @@ public class FontService {
 
     private Options options() {
         var value = settings.fetch("resources", Options.class).orElse(new Options("khon-font-book-local", null));
-        var python = value.parserExecutable();
-        if (python == null || python.isBlank()) { python = environment.getProperty("KHON_FONT_BOOK_PYTHON", ""); }
-        return new Options(value.policyName(), python);
+        return value; // Legacy parserExecutable is ignored by the built-in parser.
     }
 
     public FontParser.RuntimeInfo runtime() { return parser.runtime(options().parserExecutable()); }
@@ -630,36 +635,29 @@ public class FontService {
                 return new FaceView(face, "READY", "附件记录存在；预览或重新校验时核对实际文件");
             } catch (Exception ex) { return new FaceView(face, "MISSING", "附件缺失、存储配置变化或地址不可读取"); }
         }).toList();
-        String storageMessage = "字体专用存储可用";
+        String storageMessage = "字体存储策略已准备；实际读写在导入与预览时检查";
+        String policyName = "";
         List<AttachmentChoice> choices = List.of();
         try {
             var policy = policy();
             choices = all(Attachment.class).stream().filter(a -> policy.getMetadata().getName().equals(a.getSpec().getPolicyName()))
                 .filter(a -> List.of("font/woff2", "font/ttf", "application/x-font-ttf", "application/x-font-truetype", "application/octet-stream").contains(Objects.toString(a.getSpec().getMediaType(), "")))
                 .map(a -> new AttachmentChoice(a.getMetadata().getName(), a.getSpec().getDisplayName(), a.getSpec().getSize())).toList();
-        } catch (Exception ex) { storageMessage = "请在插件设置中配置允许字体的专用本地存储策略（非默认策略）"; }
-        return new Catalog(families, assets, visible, choices, runtime(), options().policyName(), storageMessage, page, size, faces.size());
+            policyName = policy.getMetadata().getName();
+        } catch (org.springframework.web.server.ResponseStatusException ex) { storageMessage = ex.getReason();
+        } catch (Exception ex) { storageMessage = "字体存储尚未准备完成，请刷新后重试"; }
+        return new Catalog(families, assets, visible, choices, runtime(), policyName, storageMessage, page, size, faces.size());
     }
 
     private Policy policy() {
-        var name = options().policyName();
-        if (name == null || name.isBlank() || "default-policy".equals(name)) {
-            throw problem(HttpStatus.BAD_REQUEST, "FONT_POLICY_REQUIRED", "请配置字体专用存储，不能使用默认策略");
-        }
-        var p = client.fetch(Policy.class, name).orElseThrow(() -> problem(HttpStatus.BAD_REQUEST, "FONT_POLICY_REQUIRED", "字体存储策略不存在"));
-        if (!"local".equals(p.getSpec().getTemplateName())) { throw problem(HttpStatus.BAD_REQUEST, "UNSUPPORTED_STORAGE", "首版仅支持已配置的本地存储"); }
-        var cm = client.fetch(ConfigMap.class, p.getSpec().getConfigMapName()).orElseThrow();
-        var json = JSON.readValue(cm.getData().get("default"), LocalPolicy.class);
-        var location = Objects.toString(json.location(), "");
-        if (location.isBlank() || location.contains("..") || json.allowedFileTypes() != null && !json.allowedFileTypes().isEmpty()) {
-            throw problem(HttpStatus.BAD_REQUEST, "UNSUPPORTED_STORAGE", "需要专用子目录且文件类别列表为空的本地策略");
-        }
-        var limit = DataSize.parse(Objects.toString(json.maxFileSize(), "0")).toBytes();
-        if (limit < 1 || limit > FontParser.MAX_BYTES) { throw problem(HttpStatus.BAD_REQUEST, "UNSUPPORTED_STORAGE", "字体策略大小限制必须为 1 字节至 20 MiB"); }
-        return p;
+        return storage.ensureConfigured();
     }
 
-    public synchronized ImportResult importFile(FilePart file, ImportFields fields, String username) {
+    public ImportResult importFile(FilePart file, ImportFields fields, String username) {
+        return parsingRequest(() -> importFileLocked(file, fields, username));
+    }
+
+    private synchronized ImportResult importFileLocked(FilePart file, ImportFields fields, String username) {
         validateFields(fields);
         if (fields.familyId() != null && !fields.familyId().isBlank()) { family(fields.familyId()); }
         policy();
@@ -680,14 +678,18 @@ public class FontService {
         if (existing != null) { return finish(existing, metadata, fields, true); }
         var part = new SimpleFilePart(UUID.randomUUID() + format.extension(),
             Flux.defer(() -> Flux.just(DefaultDataBufferFactory.sharedInstance.wrap(bytes))), MediaType.parseMediaType(format.mediaType()));
-        var uploaded = attachments.upload(username, options().policyName(), null, part,
+        var uploaded = attachments.upload(username, policy().getMetadata().getName(), null, part,
             a -> a.getMetadata().setLabels(Map.of("khon-font-book.tungwenblog.dev/managed", "true")))
             .block(Duration.ofSeconds(30));
         if (uploaded == null) { throw problem(HttpStatus.BAD_GATEWAY, "UPLOAD_FAILED", "附件上传未返回结果"); }
         return saveImport(uploaded, bytes, hash, metadata, fields, "plugin-created");
     }
 
-    public synchronized ImportResult importExisting(ExistingImport request) {
+    public ImportResult importExisting(ExistingImport request) {
+        return parsingRequest(() -> importExistingLocked(request));
+    }
+
+    private synchronized ImportResult importExistingLocked(ExistingImport request) {
         var fields = new ImportFields(request.familyId(), request.source(), request.license(), request.category());
         validateFields(fields);
         if (fields.familyId() != null && !fields.familyId().isBlank()) { family(fields.familyId()); }
@@ -819,7 +821,11 @@ public class FontService {
         // Physical Halo attachment is deliberately retained, including plugin-created attachments.
     }
 
-    public synchronized FaceView recheck(String id) {
+    public FaceView recheck(String id) {
+        return parsingRequest(() -> recheckLocked(id));
+    }
+
+    private synchronized FaceView recheckLocked(String id) {
         var face = face(id); var asset = asset(face.getSpec().getAssetId());
         var a = attachment(asset.getSpec().getAttachmentName());
         var bytes = read(a);
@@ -840,7 +846,7 @@ public class FontService {
     }
 
     private URI safeUri(Attachment attachment) {
-        if (!Objects.equals(options().policyName(), attachment.getSpec().getPolicyName())) { throw problem(HttpStatus.FORBIDDEN, "ATTACHMENT_FORBIDDEN", "仅允许配置的字体存储策略中的附件"); }
+        if (!Objects.equals(policy().getMetadata().getName(), attachment.getSpec().getPolicyName())) { throw problem(HttpStatus.FORBIDDEN, "ATTACHMENT_FORBIDDEN", "仅允许配置的字体存储策略中的附件"); }
         var link = attachment.getStatus() == null ? null : attachment.getStatus().getPermalink();
         if (link == null || !link.startsWith("/upload/") || link.startsWith("//") || link.contains("..")
             || link.contains("%") || link.contains("\\") || link.contains("?") || link.contains("#")) {

@@ -19,16 +19,19 @@ public class KhonFontBookPlugin extends BasePlugin {
     private final SchemeManager schemes;
     private final FontService fonts;
     private final FontStyles styles;
+    private final FontParser parser;
 
-    public KhonFontBookPlugin(PluginContext pluginContext, SchemeManager schemes, FontService fonts, FontStyles styles) {
+    public KhonFontBookPlugin(PluginContext pluginContext, SchemeManager schemes, FontService fonts, FontStyles styles, FontParser parser) {
         super(pluginContext);
         this.schemes = schemes;
         this.fonts = fonts;
         this.styles = styles;
+        this.parser = parser;
     }
 
     @Override
     public void start() {
+        parser.start();
         schemes.register(FontFamily.class);
         schemes.register(FontAsset.class);
         schemes.register(FontFace.class);
@@ -42,6 +45,7 @@ public class KhonFontBookPlugin extends BasePlugin {
     @Override
     public void stop() {
         styles.stop();
+        parser.stop();
         schemes.unregister(Scheme.buildFromType(FontReference.class));
         schemes.unregister(Scheme.buildFromType(FontRule.class));
         schemes.unregister(Scheme.buildFromType(FontScheme.class));

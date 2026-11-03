@@ -31,6 +31,9 @@ rules:
   - apiGroups: [console.api.font-book.tungwenblog.dev]
     resources: [replacements]
     verbs: [create]
+  # Halo 2.27 authorizes POST /resource/name as a non-resource action.
+  - nonResourceURLs: [/apis/console.api.font-book.tungwenblog.dev/v1alpha1/imports/attachment]
+    verbs: [create]
 ---
 apiVersion: v1alpha1
 kind: Role

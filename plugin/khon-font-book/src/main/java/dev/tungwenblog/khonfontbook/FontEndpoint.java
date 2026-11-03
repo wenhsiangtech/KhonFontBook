@@ -54,11 +54,11 @@ public class FontEndpoint implements CustomEndpoint {
                     .parameter(parameterBuilder().name("size").in(ParameterIn.QUERY).implementation(Integer.class))
                     .parameter(parameterBuilder().name("keyword").in(ParameterIn.QUERY).implementation(String.class))
                     .response(responseBuilder().implementation(FontService.RuleCatalog.class)))
-            .POST("/rules", r -> r.bodyToMono(FontService.RuleUpdate.class).flatMap(body -> json(() -> service.saveRule(null, body))),
+            .POST("/rules", r -> body(r, FontService.RuleUpdate.class).flatMap(body -> json(() -> service.saveRule(null, body))),
                 b -> b.operationId("CreateFontRule").tag(TAG)
                     .requestBody(requestBodyBuilder().required(true).implementation(FontService.RuleUpdate.class))
                     .response(responseBuilder().implementation(FontRule.class)))
-            .PUT("/rules/{id}", r -> r.bodyToMono(FontService.RuleUpdate.class).flatMap(body -> json(() -> service.saveRule(r.pathVariable("id"), body))),
+            .PUT("/rules/{id}", r -> body(r, FontService.RuleUpdate.class).flatMap(body -> json(() -> service.saveRule(r.pathVariable("id"), body))),
                 b -> b.operationId("UpdateFontRule").tag(TAG).parameter(idParameter())
                     .requestBody(requestBodyBuilder().required(true).implementation(FontService.RuleUpdate.class))
                     .response(responseBuilder().implementation(FontRule.class)))
@@ -86,11 +86,11 @@ public class FontEndpoint implements CustomEndpoint {
                     .parameter(parameterBuilder().name("size").in(ParameterIn.QUERY).implementation(Integer.class))
                     .parameter(parameterBuilder().name("keyword").in(ParameterIn.QUERY).implementation(String.class))
                     .response(responseBuilder().implementation(FontService.SchemeCatalog.class)))
-            .POST("/schemes", r -> r.bodyToMono(FontService.SchemeUpdate.class).flatMap(body -> json(() -> service.saveScheme(null, body))),
+            .POST("/schemes", r -> body(r, FontService.SchemeUpdate.class).flatMap(body -> json(() -> service.saveScheme(null, body))),
                 b -> b.operationId("CreateFontScheme").tag(TAG)
                     .requestBody(requestBodyBuilder().required(true).implementation(FontService.SchemeUpdate.class))
                     .response(responseBuilder().implementation(FontScheme.class)))
-            .PUT("/schemes/{id}", r -> r.bodyToMono(FontService.SchemeUpdate.class).flatMap(body -> json(() -> service.saveScheme(r.pathVariable("id"), body))),
+            .PUT("/schemes/{id}", r -> body(r, FontService.SchemeUpdate.class).flatMap(body -> json(() -> service.saveScheme(r.pathVariable("id"), body))),
                 b -> b.operationId("UpdateFontScheme").tag(TAG).parameter(idParameter())
                     .requestBody(requestBodyBuilder().required(true).implementation(FontService.SchemeUpdate.class))
                     .response(responseBuilder().implementation(FontScheme.class)))
@@ -121,23 +121,23 @@ public class FontEndpoint implements CustomEndpoint {
                 .requestBody(requestBodyBuilder().required(true).content(contentBuilder().mediaType("multipart/form-data")
                     .schema(schemaBuilder().implementation(UploadForm.class))))
                 .response(responseBuilder().implementation(FontService.ImportResult.class)))
-            .POST("/imports/attachment", r -> r.bodyToMono(FontService.ExistingImport.class)
+            .POST("/imports/attachment", r -> body(r, FontService.ExistingImport.class)
                 .flatMap(body -> json(() -> service.importExisting(body))), b -> b.operationId("ImportFontAttachment").tag(TAG)
                 .requestBody(requestBodyBuilder().required(true).implementation(FontService.ExistingImport.class))
                 .response(responseBuilder().implementation(FontService.ImportResult.class)))
-            .POST("/families", r -> r.bodyToMono(FontService.FamilyUpdate.class).flatMap(body -> json(() -> service.createFamily(body))),
+            .POST("/families", r -> body(r, FontService.FamilyUpdate.class).flatMap(body -> json(() -> service.createFamily(body))),
                 b -> b.operationId("CreateFontFamily").tag(TAG)
                     .requestBody(requestBodyBuilder().required(true).implementation(FontService.FamilyUpdate.class))
                     .response(responseBuilder().implementation(FontFamily.class)))
-            .PUT("/families/{id}", r -> r.bodyToMono(FontService.FamilyUpdate.class).flatMap(body -> json(() -> service.updateFamily(r.pathVariable("id"), body))),
+            .PUT("/families/{id}", r -> body(r, FontService.FamilyUpdate.class).flatMap(body -> json(() -> service.updateFamily(r.pathVariable("id"), body))),
                 b -> b.operationId("UpdateFontFamily").tag(TAG).parameter(idParameter())
                     .requestBody(requestBodyBuilder().required(true).implementation(FontService.FamilyUpdate.class))
                     .response(responseBuilder().implementation(FontFamily.class)))
-            .PUT("/faces/{id}", r -> r.bodyToMono(FontService.FaceUpdate.class).flatMap(body -> json(() -> service.updateFace(r.pathVariable("id"), body))),
+            .PUT("/faces/{id}", r -> body(r, FontService.FaceUpdate.class).flatMap(body -> json(() -> service.updateFace(r.pathVariable("id"), body))),
                 b -> b.operationId("UpdateFontFace").tag(TAG).parameter(idParameter())
                     .requestBody(requestBodyBuilder().required(true).implementation(FontService.FaceUpdate.class))
                     .response(responseBuilder().implementation(FontFace.class)))
-            .PUT("/assets/{id}", r -> r.bodyToMono(FontService.AssetUpdate.class).flatMap(body -> json(() -> service.updateAsset(r.pathVariable("id"), body))),
+            .PUT("/assets/{id}", r -> body(r, FontService.AssetUpdate.class).flatMap(body -> json(() -> service.updateAsset(r.pathVariable("id"), body))),
                 b -> b.operationId("UpdateFontAsset").tag(TAG).parameter(idParameter())
                     .requestBody(requestBodyBuilder().required(true).implementation(FontService.AssetUpdate.class))
                     .response(responseBuilder().implementation(FontAsset.class)))
@@ -183,6 +183,10 @@ public class FontEndpoint implements CustomEndpoint {
                     field(parts.getFirst("license")), field(parts.getFirst("category"))), principal.getName()));
             }));
     }
+    private static <T> Mono<T> body(ServerRequest request, Class<T> type) {
+        return request.bodyToMono(type).switchIfEmpty(Mono.error(
+            FontParser.problem(HttpStatus.BAD_REQUEST, "BODY_REQUIRED", "需要请求内容")));
+    }
     private static String field(Object part) { return part instanceof FormFieldPart value ? value.value() : ""; }
     private static int integer(ServerRequest request, String name, int fallback) {
         try { return Integer.parseInt(request.queryParam(name).orElse(Integer.toString(fallback))); }
@@ -202,8 +206,17 @@ public class FontEndpoint implements CustomEndpoint {
     private static org.springdoc.core.fn.builders.parameter.Builder versionParameter() {
         return parameterBuilder().name("version").in(ParameterIn.QUERY).required(true).implementation(Long.class);
     }
-    private static Mono<ServerResponse> json(Callable<?> action) {
-        return Mono.fromCallable(action).subscribeOn(Schedulers.boundedElastic()).flatMap(value -> ServerResponse.ok()
+    static Mono<ServerResponse> json(Callable<?> action) {
+        return Mono.fromCallable(() -> {
+            try { return action.call(); }
+            catch (org.springframework.web.server.ResponseStatusException ex) {
+                // A cancelled subscriber has no response to receive. The parser
+                // already terminated and reaped the interrupted worker.
+                if (Thread.currentThread().isInterrupted() && ex.getReason() != null
+                    && ex.getReason().startsWith("PARSER_CANCELLED:")) return null;
+                throw ex;
+            }
+        }).subscribeOn(Schedulers.boundedElastic()).flatMap(value -> ServerResponse.ok()
             .cacheControl(CacheControl.noStore()).bodyValue(value));
     }
 }

@@ -10,6 +10,48 @@ repositories {
     mavenCentral()
 }
 
+sourceSets {
+    parser { java.srcDir 'src/parser/java' }
+}
+
+dependencies {
+    parserImplementation 'org.apache.pdfbox:fontbox:2.0.34'
+    parserImplementation 'commons-logging:commons-logging:1.3.5'
+}
+
+tasks.register('parserJar', Jar) {
+    archiveFileName = 'font-worker.jar'
+    destinationDirectory = layout.buildDirectory.dir('parser')
+    manifest { attributes('Main-Class': 'dev.tungwenblog.khonfontbook.parser.MetadataWorker') }
+    from sourceSets.parser.output
+    from('LICENSE')
+    from('NOTICE')
+    from({ configurations.parserRuntimeClasspath.collect { zipTree(it) } }) {
+        exclude 'META-INF/MANIFEST.MF', 'META-INF/*.SF', 'META-INF/*.RSA', 'META-INF/*.DSA',
+            'org/apache/fontbox/ttf/CmapSubtable.class', 'LICENSE*', 'NOTICE*', 'META-INF/LICENSE*', 'META-INF/NOTICE*'
+    }
+    configurations.parserRuntimeClasspath.resolvedConfiguration.resolvedArtifacts.each { artifact ->
+        from(zipTree(artifact.file)) {
+            include 'LICENSE*', 'NOTICE*', 'META-INF/LICENSE*', 'META-INF/NOTICE*'
+            into "META-INF/licenses/${artifact.moduleVersion.id.group}.${artifact.name}-${artifact.moduleVersion.id.version}"
+        }
+    }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+tasks.register('parserChecksums') {
+    dependsOn tasks.named('parserJar')
+    inputs.file tasks.named('parserJar').flatMap { it.archiveFile }
+    inputs.file 'src/main/resources/parser/linux-x86_64/decoder'
+    outputs.file layout.buildDirectory.file('parser/checksums.properties')
+    doLast {
+        def digest = { File input -> java.security.MessageDigest.getInstance('SHA-256').digest(input.bytes).encodeHex().toString() }
+        layout.buildDirectory.file('parser/checksums.properties').get().asFile.text =
+            "font-worker.jar=${digest(tasks.named('parserJar').get().archiveFile.get().asFile)}\n" +
+            "linux-x86_64/decoder=${digest(file('src/main/resources/parser/linux-x86_64/decoder'))}\n"
+    }
+}
+
 dependencies {
     implementation platform('run.halo.tools.platform:plugin:2.27.0')
     compileOnly 'run.halo.app:api'
@@ -76,6 +118,10 @@ tasks.named('classes') {
 configurations {
     releaseSources { transitive = false }
 }
+dependencies {
+    releaseSources 'org.apache.pdfbox:fontbox:2.0.34:sources'
+    releaseSources 'commons-logging:commons-logging:1.3.5:sources'
+}
 
 def releaseRuntimeArtifacts = configurations.runtimeClasspath.resolvedConfiguration.resolvedArtifacts
 releaseRuntimeArtifacts.each { artifact ->
@@ -83,6 +129,10 @@ releaseRuntimeArtifacts.each { artifact ->
 }
 
 tasks.named('processResources') {
+    dependsOn tasks.named('parserChecksums')
+    exclude 'fontmeta.py'
+    from(tasks.named('parserJar')) { into 'parser' }
+    from(layout.buildDirectory.file('parser/checksums.properties')) { into 'parser' }
     from('LICENSE')
     from('NOTICE')
     from('THIRD_PARTY_NOTICES.md')
@@ -114,10 +164,7 @@ tasks.register('sourceBundle', Zip) {
     }
     from(rootProject.file('../../docs/plugin/khon-font-book')) {
         into 'docs/plugin/khon-font-book'
-        include 'app-store-listing.md', 'privacy.md', 'release-notes.md', 'build.md'
-    }
-    from(rootProject.file('../../scripts/halo-fonts')) {
-        into 'scripts/halo-fonts'
-        include 'Dockerfile', 'requirements.txt'
+        include 'release/guides/app-store-listing.md', 'release/guides/privacy.md',
+            'release/guides/release-notes.md', 'release/guides/build.md'
     }
 }

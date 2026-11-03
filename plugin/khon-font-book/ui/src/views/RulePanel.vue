@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { utils } from '@halo-dev/ui-shared'
 import { Dialog, Toast, VAlert, VButton, VCard, VEmpty, VEntity, VEntityContainer, VEntityField, VModal, VPagination } from '@halo-dev/components'
 import { isAxiosError } from 'axios'
@@ -28,6 +28,7 @@ const compiled = ref<CompiledCss>()
 const compileError = ref('')
 const compiling = ref(false)
 let compileGeneration = 0
+let loadGeneration = 0
 const context = ref({ themeName: '', contentKind: 'Unknown', contentName: '' })
 const canManage = computed(() => utils.permission.has(['khon-font-book:manage']))
 const scopes = [
@@ -55,16 +56,18 @@ async function reason(ex: unknown) {
 }
 function clearCompilation() { compileGeneration++; compiled.value = undefined; compileError.value = '' }
 async function load() {
+  const run = ++loadGeneration
   loading.value = true; error.value = ''; clearCompilation()
   try {
     const [rules, choices] = await Promise.all([
       fontsApi.listFontRules({ page: page.value, size: size.value, keyword: keyword.value }),
       fontsApi.getFontRuleOptions({ contentKind: 'Post', page: 1, size: 1 }),
     ])
+    if (run !== loadGeneration) return
     catalog.value = rules.data; options.value = choices.data
     if (!context.value.themeName) context.value.themeName = choices.data.themes?.[0]?.id || ''
-  } catch (ex) { error.value = await reason(ex) }
-  finally { loading.value = false }
+  } catch (ex) { const message = await reason(ex); if (run === loadGeneration) error.value = message }
+  finally { if (run === loadGeneration) loading.value = false }
 }
 function open(rule?: FontRule) {
   selected.value = rule
@@ -111,6 +114,7 @@ async function compile() {
 }
 watch(() => props.resourceRevision, load)
 onMounted(load)
+onBeforeUnmount(() => { loadGeneration++; clearCompilation() })
 </script>
 
 <template>

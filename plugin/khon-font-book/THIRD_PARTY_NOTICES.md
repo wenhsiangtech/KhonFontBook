@@ -30,19 +30,46 @@ versions are provided by the Halo host. The source ZIP contains the pnpm lockfil
 This inventory does not imply the host or the entire node_modules tree is bundled
 inside this JAR. Build tools are declared in ui/package.json and ui/pnpm-lock.yaml.
 
-## External parser prerequisite (not included in the plugin JAR)
+## Built-in parser
 
-The site administrator separately installs Linux Python >=3.11, FontTools 4.67.0
-(MIT, https://github.com/fonttools/fonttools), and Brotli 1.2.0
-(MIT, https://github.com/google/brotli). FontTools also ships LICENSE.external;
-retain both files in any separately redistributed parser environment. Python
-retains its own PSF and bundled component terms. The example Dockerfile and pinned
-requirements describe installation; this release does not distribute that image.
+The plugin contains an isolated metadata worker and a Linux x86_64 decoder.
+The worker's libraries are loaded only in its separate Java process.
+
+| Component | Version | Terms |
+| --- | --- | --- |
+| Apache FontBox | 2.0.34 | Apache-2.0; https://pdfbox.apache.org/ |
+| Apache Commons Logging | 1.3.5 | Apache-2.0; https://commons.apache.org/proper/commons-logging/ |
+| WOFF2 | 1.0.2 | MIT; https://github.com/google/woff2 |
+| Brotli | 1.2.0 | MIT; https://github.com/google/brotli |
+| GCC libstdc++, libgcc, libgcc_eh and GCC startup code | 13.3.0, Ubuntu 13.3.0-6ubuntu2~24.04.1 | GPLv3 with GCC Runtime Library Exception 3.1 |
+| glibc startup objects | 2.39, Ubuntu 2.39-0ubuntu8.9 | LGPL-2.1-or-later with the startup sources' linking exception |
+
+FontBox's cmap reader is modified to reject invalid glyph indices rather than
+silently skip them. WOFF2 uses the existing portable byte access branches and a
+64 MiB expanded-stream ceiling in place of its compression-ratio heuristic.
+Original headers are retained. Corresponding parser Java/native sources and build
+entry points are included in the source bundle, along with the exact Java
+dependency source JARs. Each Java library's original LICENSE/NOTICE is preserved
+under the worker JAR's `META-INF/licenses/` directory. Native and compiler runtime
+statements are under the plugin's `META-INF/licenses/font-parser/` directory.
+
+The decoder uses unmodified GCC runtime archives and a normal GCC compilation
+process; see https://gcc.gnu.org/onlinedocs/libstdc++/manual/license.html.
+It dynamically uses the system glibc and loader instead of redistributing them.
+The linked glibc startup source files carry an additional compiled-linking
+permission. The source bundle includes the decoder source and its build script;
+compiler package versions are given above. No compiler is invoked at runtime.
+
+The measured runtime is ordinary Halo 2.27.0 on Linux x86_64 with glibc >=2.38,
+Java 21 and system `/usr/bin/prlimit`, plus writable/executable temporary storage.
+Other platforms are not verified. Python, FontTools, pip and external interpreter
+paths are not used. No parsing components are downloaded during installation,
+startup or import. User fonts are not bundled.
 
 ## Fonts and artwork
 
-No user font binaries or font interpreter are included in
-the plugin or source ZIP. Users must have rights to upload and publicly host their
+No user font binaries are included in the plugin or source ZIP.
+Users must have rights to upload and publicly host their
 fonts. A metadata embedding-rights flag or a filled license field is not legal
 verification. The cover is the author-supplied KFBCover.png artwork, not a
 font-file distribution.

@@ -26,6 +26,7 @@ const previewFamily = ref('sans-serif')
 const previewWeight = ref(400)
 const previewStyle = ref('normal')
 let generation = 0
+let loadGeneration = 0
 let previewFonts: FontFace[] = []
 const canManage = computed(() => utils.permission.has(['khon-font-book:manage']))
 const genericOptions = ['sans-serif', 'serif', 'monospace', 'system-ui'].map(value => ({ value, label: value }))
@@ -74,12 +75,16 @@ function clearPreview() {
   status.value = '预览基于已保存方案；更改后请先保存。'
 }
 async function load() {
+  const run = ++loadGeneration
   clearPreview()
   loading.value = true
   error.value = ''
-  try { catalog.value = (await fontsApi.listFontSchemes({ page: page.value, size: size.value, keyword: keyword.value })).data }
-  catch (ex) { error.value = await reason(ex) }
-  finally { loading.value = false }
+  try {
+    const { data } = await fontsApi.listFontSchemes({ page: page.value, size: size.value, keyword: keyword.value })
+    if (run === loadGeneration) catalog.value = data
+  }
+  catch (ex) { const message = await reason(ex); if (run === loadGeneration) error.value = message }
+  finally { if (run === loadGeneration) loading.value = false }
 }
 function open(value?: FontScheme) {
   clearPreview()
@@ -160,7 +165,7 @@ watch(visible, value => { if (!value) clearPreview() })
 watch(sample, clearPreview)
 watch(() => props.resourceRevision, load)
 onMounted(load)
-onBeforeUnmount(clearPreview)
+onBeforeUnmount(() => { loadGeneration++; clearPreview() })
 </script>
 
 <template>

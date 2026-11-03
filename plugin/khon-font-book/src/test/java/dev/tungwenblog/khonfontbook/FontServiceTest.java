@@ -68,6 +68,9 @@ class FontServiceTest {
         policy.getSpec().setTemplateName("local"); policy.getSpec().setConfigMapName("font-config"); seed(policy);
         var cm = new ConfigMap(); cm.setMetadata(meta("font-config"));
         cm.setData(Map.of("default", "{\"location\":\"fonts\",\"allowedFileTypes\":[],\"maxFileSize\":\"20MB\"}")); seed(cm);
+        var pluginConfig = new ConfigMap(); pluginConfig.setMetadata(meta("khon-font-book-config"));
+        pluginConfig.setData(Map.of("resources", "{\"policyName\":\"font-policy\"}")); seed(pluginConfig);
+        var localTemplate = new run.halo.app.core.extension.attachment.PolicyTemplate(); localTemplate.setMetadata(meta("local")); seed(localTemplate);
         var a = new Attachment(); a.setMetadata(meta("attachment")); a.setSpec(new Attachment.AttachmentSpec());
         a.getSpec().setPolicyName("font-policy"); a.getSpec().setMediaType("font/woff2"); a.getSpec().setSize(4L);
         a.setStatus(new Attachment.AttachmentStatus()); a.getStatus().setPermalink("/upload/font.woff2"); seed(a);
@@ -75,7 +78,7 @@ class FontServiceTest {
         when(parser.parse(anyString(), any())).thenReturn(new FontMetadata("Test", "Regular", 400, "normal", 1, 2, 0, "4.67.0", List.of(new FontMetadata.CoverageRange(65, 65))));
         var external = mock(run.halo.app.infra.ExternalUrlSupplier.class);
         when(external.getRaw()).thenReturn(java.net.URI.create("http://127.0.0.1:" + server.getAddress().getPort()).toURL());
-        service = new FontService(client, uploads, parser, settings, new MockEnvironment(), external);
+        service = new FontService(client, uploads, parser, settings, new MockEnvironment(), external, new FontStorage(client));
     }
     @AfterEach void cleanup() { if (server != null) server.stop(0); }
     private static Metadata meta(String name) { var m = new Metadata(); m.setName(name); m.setVersion(0L); return m; }
@@ -83,6 +86,27 @@ class FontServiceTest {
     private FontService.ImportFields fields() { return new FontService.ImportFields("", "Original source", "Test permission", "Test"); }
     private FontService.ImportResult upload() {
         return service.importFile(new SimpleFilePart("test.woff2", Flux.defer(() -> Flux.just(DefaultDataBufferFactory.sharedInstance.wrap(bytes))), MediaType.parseMediaType("font/woff2")), fields(), "tester");
+    }
+
+    @Test void newInstallAutomaticallyPreparesDedicatedStorageWithoutChangingOtherSettings() {
+        store.get(Policy.class).clear();
+        var config = new ConfigMap(); config.setMetadata(meta("khon-font-book-config"));
+        config.setData(new HashMap<>(Map.of("resources", "{\"policyName\":\"khon-font-book-local\",\"parserExecutable\":\"/legacy\"}",
+            "publication", "{\"injectionEnabled\":false}"))); seed(config);
+        when(settings.fetch("resources", FontService.Options.class)).thenReturn(
+            Optional.of(new FontService.Options("khon-font-book-local", "/legacy")));
+        var catalog = service.catalog(1, 20, "");
+        assertNotNull(store.get(Policy.class).get("khon-font-book-local"), "New installation must prepare its own policy");
+        assertEquals("khon-font-book-local", catalog.policyName());
+        assertEquals("{\"injectionEnabled\":false}", config.getData().get("publication"));
+        assertTrue(config.getData().get("resources").contains("/legacy"));
+    }
+
+    @Test void catalogDoesNotReportStorageReadyWhenAttachmentListingFails() {
+        when(client.list(eq(Attachment.class), any(), any())).thenThrow(new IllegalStateException("Storage temporarily unavailable"));
+        var catalog = service.catalog(1, 20, "");
+        assertEquals("", catalog.policyName());
+        assertFalse(catalog.storageMessage().isBlank());
     }
 
     @Test void ttfUploadKeepsActualFormatAndRejectsRenamedFiles() {
@@ -100,10 +124,25 @@ class FontServiceTest {
         assertEquals(400, error.getStatusCode().value());
     }
 
-    @Test void concurrentDuplicateImportsKeepOneAssetAndOneFace() throws Exception {
+    @Test void concurrentImportIsRejectedAndRetryKeepsOneAssetAndOneFace() throws Exception {
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        var metadata = new FontMetadata("Test", "Regular", 400, "normal", 1, 2, 0, "test", List.of(new FontMetadata.CoverageRange(65, 65)));
+        when(parser.parse(anyString(), any())).thenAnswer(invocation -> {
+            entered.countDown();
+            if (!release.await(5, TimeUnit.SECONDS)) throw new AssertionError("Import was not released");
+            return metadata;
+        });
         try (var pool = Executors.newFixedThreadPool(2)) {
-            var first = pool.submit(this::upload); var second = pool.submit(this::upload);
-            var a = first.get(10, TimeUnit.SECONDS); var b = second.get(10, TimeUnit.SECONDS);
+            var first = pool.submit(this::upload);
+            try {
+                assertTrue(entered.await(3, TimeUnit.SECONDS));
+                var second = pool.submit(() -> assertThrows(ResponseStatusException.class, this::upload));
+                var busy = second.get(1, TimeUnit.SECONDS);
+                assertEquals(503, busy.getStatusCode().value());
+                assertTrue(busy.getReason().startsWith("PARSER_BUSY:"));
+            } finally { release.countDown(); }
+            var a = first.get(10, TimeUnit.SECONDS); var b = upload();
             assertEquals(a.face().getMetadata().getName(), b.face().getMetadata().getName());
             assertNotEquals(a.duplicate(), b.duplicate());
             assertEquals(1, store.get(FontAsset.class).size());

@@ -4,11 +4,11 @@
 
 KhonFontBook 是 Halo 的字体管理插件。支持上传字体、设置中英文字体搭配，并为主题中的标题、正文或指定元素设置字体，不需要修改主题文件。
 
-版本 0.1.0 · 作者 KhonChi · Halo 2.27.0 · GPL-3.0
+版本 0.2.0 · 作者 KhonChi · Halo 2.27.0 · GPL-3.0
 
 ## 功能
 
-- **字体库**：导入 WOFF2 和 TrueType TTF，查看字重、字符覆盖及 normal、italic、oblique 样式，按需预览字体。
+- **字体库**：上传 WOFF2 和 TrueType TTF，或从专用存储的已有附件导入；查看真实字重、字符覆盖及 normal、italic、oblique 样式，按需预览字体。
 - **中英配对**：为中文和西文分别选字体，保存为可重复使用的方案，并设置缺字时使用的回退字体。
 - **主题规则**：通过 class、ID 或标签选择要修改的文字，可限定主题、主页、文章或独立页面。
 - **选择器查询**：从给定选择器查找承载文字的子元素，测试哪些选择器可以覆盖主题的字体设置，再填入规则。
@@ -16,11 +16,13 @@ KhonFontBook 是 Halo 的字体管理插件。支持上传字体、设置中英�
 
 ## 使用
 
-1. 按[安装说明](../../docs/plugin/khon-font-book/app-store-listing.md)准备解析环境和字体存储策略，安装并启用插件。
+1. 安装并启用插件，打开字体工作台检查解析与存储状态。无需填写解释器或策略，已有有效策略继续沿用。详见[安装说明](../../docs/plugin/khon-font-book/release/guides/app-store-listing.md)。
 2. 在「字体库」导入字体，填写来源与许可，检查字体预览。
 3. 如需搭配中英字体，在「配对方案」中保存组合。
 4. 在「主题规则」中选择主题、页面范围、字体或方案，填写选择器并保存。
 5. 在插件设置中开启「主题字体应用」，刷新目标页面。
+
+普通账号需要「查看字体资源」权限才能访问工作台；导入、编辑或删除还需要「管理字体资源」权限。字体解析与存储就绪后才可导入。完整流程见[快速开始](../../docs/plugin/khon-font-book/console/guides/quick-start.md)。
 
 多个目标用半角逗号分隔，例如：
 
@@ -32,7 +34,7 @@ KhonFontBook 是 Halo 的字体管理插件。支持上传字体、设置中英�
 
 ## 环境与范围
 
-适用于 Halo 2.27.0、Java 21。字体导入需要 Linux、Python ≥3.11、FontTools 4.67.0、Brotli 1.2.0 和独立的 local 附件策略。Python 环境需另行安装。
+适用于 Halo 2.27.0、Java 21，当前解析运行范围为 Linux x86_64、glibc ≥2.38，系统提供 `/usr/bin/prlimit`，临时目录可写且允许执行。解析组件随插件提供，无需安装 Python、FontTools 或另配解释器；其他系统和架构尚未验证。新安装在首次访问工作台或导入前自动准备专用 local 附件策略，已有有效配置保留。
 
 支持静态单色 WOFF2 和 TrueType TTF，单文件上限 20 MiB。暂不支持 OTF、变量字体、颜色字体、字体集合、格式转换和自动子集化。
 
@@ -42,6 +44,8 @@ KhonFontBook 是 Halo 的字体管理插件。支持上传字体、设置中英�
 
 ## 文档与反馈
 
-[安装与使用](../../docs/plugin/khon-font-book/app-store-listing.md) · [数据处理](../../docs/plugin/khon-font-book/privacy.md) · [版本说明](../../docs/plugin/khon-font-book/release-notes.md) · [源码构建](../../docs/plugin/khon-font-book/build.md) · [问题反馈](https://github.com/wenhsiangtech/KhonFontBook/issues)
+[快速开始](../../docs/plugin/khon-font-book/console/guides/quick-start.md) · [完整用户说明](../../docs/plugin/khon-font-book/console/guides/user-guide.md) · [安装与升级](../../docs/plugin/khon-font-book/release/guides/app-store-listing.md) · [版本说明](../../docs/plugin/khon-font-book/release/guides/release-notes.md)
+
+[数据处理](../../docs/plugin/khon-font-book/release/guides/privacy.md) · [源码构建](../../docs/plugin/khon-font-book/release/guides/build.md) · [开放接入](../../docs/plugin/khon-font-book/integration/guides/integration-guide.md) · [文档索引](../../docs/plugin/khon-font-book/README.md) · [问题反馈](https://github.com/wenhsiangtech/KhonFontBook/issues)
 
 许可证：[GPL-3.0](LICENSE)。第三方组件及许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

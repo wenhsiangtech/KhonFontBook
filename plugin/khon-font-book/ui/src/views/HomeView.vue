@@ -38,7 +38,9 @@ const previewStatus = ref('尚未加载预览')
 const previewFamily = ref('sans-serif')
 let loadedFont: FontFace | undefined
 let previewGeneration = 0
+let loadGeneration = 0
 const canManage = computed(() => utils.permission.has(['khon-font-book:manage']))
+const storageReady = computed(() => Boolean(catalog.value?.policyName))
 const rows = computed(() => (catalog.value?.faces ?? []).flatMap(v => v.face ? [{ ...v, face: v.face }] : []))
 const familyOptions = computed(() => (catalog.value?.families ?? []).map(f => ({ value: f.metadata.name, label: f.spec.displayName + (f.spec.enabled ? '' : '（已停用）') })))
 const attachmentOptions = computed(() => (catalog.value?.attachments ?? []).map(a => ({ value: a.name, label: `${a.displayName} · ${a.size} 字节` })))
@@ -57,14 +59,18 @@ function clearPreview() {
   previewStatus.value = '尚未加载预览'
 }
 async function load() {
+  const run = ++loadGeneration
+  clearPreview()
   loading.value = true
   error.value = ''
   try {
-    catalog.value = (await fontsApi.getFontCatalog({ page: page.value, size: size.value, keyword: keyword.value })).data
+    const { data } = await fontsApi.getFontCatalog({ page: page.value, size: size.value, keyword: keyword.value })
+    if (run !== loadGeneration) return
+    catalog.value = data
     resourceRevision.value++
     if (selected.value) selected.value = catalog.value.faces?.find(v => v.face?.metadata.name === selected.value?.metadata.name)?.face
-  } catch (ex) { error.value = message(ex) }
-  finally { loading.value = false }
+  } catch (ex) { if (run === loadGeneration) error.value = message(ex) }
+  finally { if (run === loadGeneration) loading.value = false }
 }
 function familyName(id?: string) { return catalog.value?.families?.find(f => f.metadata.name === id)?.spec.displayName || id || '未关联' }
 function fileSize(bytes = 0) { return bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KiB` : `${(bytes / 1024 / 1024).toFixed(1)} MiB` }
@@ -95,16 +101,18 @@ function openFace(face: FontFaceResource) {
   detailVisible.value = true
 }
 async function preview() {
-  if (!selected.value) return
+  const face = selected.value
+  if (!face) return
   clearPreview()
   const generation = previewGeneration
   previewStatus.value = '正在读取实际文件并校验摘要…'
   try {
-    const { data } = await fontsApi.getFontPreview({ id: selected.value.metadata.name }, { responseType: 'blob' })
+    const { data } = await fontsApi.getFontPreview({ id: face.metadata.name }, { responseType: 'blob' })
+    if (generation !== previewGeneration) return
     const url = URL.createObjectURL(data)
     try {
-      const m = selected.value.spec.metadata
-      const font = new FontFace(`kfb-preview-${selected.value.metadata.name}-${generation}`, `url(${url})`, { weight: String(m?.weight || 400), style: m?.style || 'normal' })
+      const m = face.spec.metadata
+      const font = new FontFace(`kfb-preview-${face.metadata.name}-${generation}`, `url(${url})`, { weight: String(m?.weight || 400), style: m?.style || 'normal' })
       await font.load()
       if (generation !== previewGeneration) return
       document.fonts.add(font)
@@ -189,20 +197,21 @@ async function remove(kind: 'family' | 'face' | 'asset', resource: FontFamily | 
 function closeDetails() { clearPreview(); detailVisible.value = false }
 function availability(v: FaceView) { return v.availability === 'READY' ? '附件记录存在' : v.availability === 'URL_CHANGED' ? '地址已变更' : v.availability === 'INCOMPLETE' ? '导入未完成' : '附件不可用' }
 onMounted(load)
-onBeforeUnmount(clearPreview)
+onBeforeUnmount(() => { loadGeneration++; clearPreview() })
 </script>
 
 <template>
   <VPageHeader title="KhonFontBook"><template #actions>
     <VButton :loading="loading" @click="load">刷新</VButton>
-    <VButton v-if="canManage" type="secondary" :disabled="busy || !catalog?.runtime?.available" @click="startImport">导入字体</VButton>
+    <VButton v-if="canManage" type="secondary" :disabled="busy || loading || Boolean(error) || !catalog?.runtime?.available || !storageReady" @click="startImport">导入字体</VButton>
   </template></VPageHeader>
   <div class="kfb-page">
     <VAlert v-if="error" type="error" title="无法加载字体资源" :description="error" />
     <VAlert v-if="catalog && !catalog.runtime?.available" type="warning" title="字体解析环境不可用" :description="catalog.runtime?.message" />
+    <VAlert v-if="catalog && !storageReady" type="warning" title="字体存储暂不可用" :description="catalog.storageMessage" />
     <header class="kfb-overview">
       <div class="kfb-overview-title"><img class="kfb-cover" :src="coverUrl" alt="KhonFontBook 封面" width="64" height="64" /><div><p class="kfb-eyebrow">KHON FONT BOOK</p><h2>字体工作台</h2><p class="kfb-hint">收藏字体，搭配中英，为主题中的文字选择合适的表达。</p></div></div>
-      <div class="kfb-overview-meta"><span v-if="catalog" class="kfb-badge" :class="{ 'kfb-badge-ready': catalog.runtime?.available }">{{ catalog.runtime?.available ? '解析环境就绪' : '解析环境待检查' }}</span><span class="kfb-hint">WOFF2 / TTF · 单文件上限 20 MiB</span></div>
+      <div class="kfb-overview-meta"><span v-if="loading" role="status" class="kfb-badge">正在检查字体状态…</span><span v-else-if="error" class="kfb-badge">字体状态未更新</span><template v-else-if="catalog"><span class="kfb-badge" :class="{ 'kfb-badge-ready': catalog.runtime?.available }">{{ catalog.runtime?.available ? '字体解析可用' : '字体解析不可用' }}</span><span class="kfb-badge" :class="{ 'kfb-badge-ready': storageReady }">{{ storageReady ? '字体存储已准备' : '字体存储暂不可用' }}</span></template><span class="kfb-hint">WOFF2 / TTF · 单文件上限 20 MiB</span></div>
     </header>
     <nav class="kfb-navigation" aria-label="字体工作区">
       <VButton v-for="item in sections" :key="item.id" :type="section === item.id ? 'secondary' : 'default'" :aria-pressed="section === item.id" :aria-controls="`kfb-section-${item.id}`" @click="section = item.id">{{ item.label }}</VButton>
@@ -241,7 +250,7 @@ onBeforeUnmount(clearPreview)
       <VEmpty v-else title="尚无文件资源" />
     </VCard>
     </section>
-    <details class="kfb-environment"><summary>存储与公开接入说明</summary><div><p v-if="catalog" class="kfb-hint">{{ catalog.policyName }} · {{ catalog.storageMessage }}。支持静态、单色 WOFF2 / TTF；可变字体、颜色字体和字体集合会被拒绝。</p><p class="kfb-hint">启用且可用的字体、方案及来源/授权说明可通过公开 API 读取，请勿填写秘密。主题注入开关不关闭显式公开接入。</p></div></details>
+    <details class="kfb-environment"><summary>解析、存储与公开接入说明</summary><div><p v-if="catalog" class="kfb-hint">{{ catalog.runtime?.message }}</p><p v-if="catalog" class="kfb-hint">{{ catalog.policyName }} · {{ catalog.storageMessage }}。支持静态、单色 WOFF2 / TTF；可变字体、颜色字体和字体集合会被拒绝。</p><p class="kfb-hint">启用且可用的字体、方案及来源/授权说明可通过公开 API 读取，请勿填写秘密。主题注入开关不关闭显式公开接入。</p></div></details>
   </div>
   <VModal v-model:visible="importVisible" title="导入 WOFF2 / TTF" :width="650" :layer-closable="!busy">
     <div class="kfb-dialog">

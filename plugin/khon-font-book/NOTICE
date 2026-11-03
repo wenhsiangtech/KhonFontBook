@@ -2,6 +2,7 @@ KhonFontBook
 Author: KhonChi
 
 The plugin's license is declared in plugin.yaml; see LICENSE for its GPL-3.0 text.
-This distribution includes unmodified third-party software. Its original license
+This distribution includes third-party software, including a modified FontBox
+cmap reader and bounded portable WOFF2 decoder. Original license
 and notice files are preserved under META-INF/licenses/<artifact>/ in the JAR.
-See THIRD_PARTY_NOTICES.md for the component inventory and external prerequisites.
+See THIRD_PARTY_NOTICES.md for the component inventory and runtime requirements.
